@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Личный бюджет · онлайн</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
     --bg:#f4f6f4; --card:#ffffff; --ink:#18221b; --muted:#5b6b60;
@@ -752,20 +753,37 @@ function envelopeExists(name){ return state.envelopes.some(e=>e.name===name); }
 document.getElementById("importBtn").addEventListener("click",()=>document.getElementById("fileImport").click());
 document.getElementById("fileImport").addEventListener("change",e=>{
   const f=e.target.files[0]; if(!f) return;
+  const ext=f.name.split('.').pop().toLowerCase();
+  const panel=document.getElementById("importPanel");
+
+  function handleRows(rows){
+    rows=rows.filter(r=>Array.isArray(r) && r.some(c=>String(c??"").trim()!==""));
+    if(rows.length>1) runImport(rows);
+    else { panel.style.display="block"; panel.innerHTML=`<div class="empty">Файл пуст или не удалось прочитать строки.</div>`; }
+  }
+
+  // .xlsx / .xls — через SheetJS
+  if(ext==="xlsx"||ext==="xls"){
+    const reader=new FileReader();
+    reader.onload=(ev)=>{
+      try{
+        const data=new Uint8Array(ev.target.result);
+        const wb=XLSX.read(data,{type:"array"});
+        const sheet=wb.Sheets[wb.SheetNames[0]];
+        const rows=XLSX.utils.sheet_to_json(sheet,{header:1,defval:""});
+        handleRows(rows);
+      }catch(err){ panel.style.display="block"; panel.innerHTML=`<div class="empty">Не удалось прочитать Excel: ${err.message}</div>`; }
+    };
+    reader.readAsArrayBuffer(f);
+    e.target.value="";
+    return;
+  }
+
+  // .csv — текстом
   const reader=new FileReader();
-  reader.onload=()=>{
-    let text=String(reader.result||"");
-    const ext=f.name.split('.').pop().toLowerCase();
-    if(ext==="xlsx"||ext==="xls"){
-      const panel=document.getElementById("importPanel");
-      panel.style.display="block";
-      panel.innerHTML=`<div class="empty">Для бинарного .xlsx нужна библиотека SheetJS. Сохраните файл как CSV (.csv) и загрузите его — импорт CSV полностью поддерживается.</div>`;
-      return;
-    }
-    const rows=parseCSV(text);
-    if(rows.length>1) runImport(rows); else toast("Пустой файл или не CSV");
-  };
-  reader.readAsText(f); e.target.value="";
+  reader.onload=()=>{ const rows=parseCSV(String(reader.result||"")); handleRows(rows); };
+  reader.readAsText(f);
+  e.target.value="";
 });
 
 // ============ Старт ============
